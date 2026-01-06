@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AVATAR AGENTIC AI</title>
     <style>
-        /* [cite: 7-252] Styles kept consistent with your original design */
+        /* [cite: 7-252] Original styles maintained for consistency */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -90,7 +90,7 @@
 
     <script>
         // Core state variables [cite: 299-305]
-        let isChatActive = false, isRecording = false, isSpeaking = false, isLoading = false;
+        let isChatActive = false, isRecording = false, isSpeaking = true, isLoading = false;
         let messages = [], contextMemory = [], recognition = null, audioLevelInterval = null;
         let USER_OPENAI_KEY = ""; 
 
@@ -103,7 +103,7 @@
         const voiceBarContainer = document.getElementById('voiceBarContainer');
         const voiceBar = document.getElementById('voiceBar');
 
-        // Initial setup for Speech Recognition [cite: 362-366]
+        // Setup Speech Recognition [cite: 362-366]
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             recognition = new SpeechRecognition();
@@ -119,21 +119,14 @@
 
             recognition.onresult = (event) => {
                 const transcript = event.results[0][0].transcript;
-                inputBox.value = transcript;
-                handleSendMessage(); // Automatically send when voice is finished
+                inputBox.value = transcript; // Write user voice to editbox [cite: 377]
+                handleSendMessage(); 
             };
 
-            recognition.onerror = (event) => {
-                console.error('Speech recognition error:', event.error);
-                stopRecording();
-            };
-
-            recognition.onend = () => {
-                stopRecording();
-            };
+            recognition.onerror = (event) => { stopRecording(); };
+            recognition.onend = () => { stopRecording(); };
         }
 
-        // Toggle functions [cite: 315, 349, 407]
         function toggleChat() {
             isChatActive = !isChatActive;
             if (isChatActive) {
@@ -146,19 +139,17 @@
                 sendBtn.disabled = false;
                 micBtn.disabled = false;
                 speakerBtn.disabled = false;
+                if(isSpeaking) speakerBtn.classList.add('active'); // Voice active by default
                 chatLog.innerHTML = '<div class="empty-state">Ready to chat...</div>';
             } else {
-                location.reload(); // Simplest way to reset everything
+                location.reload(); 
             }
         }
 
         function toggleRecording() {
             if (!isChatActive || !recognition) return;
-            if (!isRecording) {
-                recognition.start();
-            } else {
-                recognition.stop();
-            }
+            if (!isRecording) { recognition.start(); } 
+            else { recognition.stop(); }
         }
 
         function stopRecording() {
@@ -172,8 +163,7 @@
         function simulateAudioLevel() {
             audioLevelInterval = setInterval(() => {
                 if (!isRecording) return;
-                const level = Math.random() * 100;
-                voiceBar.style.width = level + '%';
+                voiceBar.style.width = Math.random() * 100 + '%';
             }, 100);
         }
 
@@ -183,38 +173,48 @@
             if (!isSpeaking && window.speechSynthesis) window.speechSynthesis.cancel();
         }
 
-        // Messaging logic [cite: 421-438, 472-512]
+        // Messaging logic [cite: 421, 472]
         async function handleSendMessage() {
             const userMessage = inputBox.value.trim();
             if (!userMessage || isLoading) return;
             
             addMessage('user', userMessage);
-            inputBox.value = '';
+            inputBox.value = ''; 
             isLoading = true;
             sendBtn.disabled = true;
 
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${USER_OPENAI_KEY}`
-                },
-                body: JSON.stringify({
-                    model: 'gpt-3.5-turbo',
-                    messages: [{ role: 'system', content: 'You are a helpful assistant for Avatar Agentic AI.' }, ...contextMemory, { role: 'user', content: userMessage }]
-                })
-            });
+            try {
+                const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${USER_OPENAI_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: 'gpt-3.5-turbo',
+                        messages: [{ role: 'system', content: 'You are a helpful assistant for Avatar Agentic AI.' }, ...contextMemory, { role: 'user', content: userMessage }]
+                    })
+                });
 
-            const data = await response.json();
-            const aiResponse = data.choices ? data.choices[0].message.content : "Error connecting to AI.";
-            
-            addMessage('assistant', aiResponse);
-            contextMemory.push({ role: 'user', content: userMessage }, { role: 'assistant', content: aiResponse });
-            if (contextMemory.length > 10) contextMemory.shift();
+                const data = await response.json();
+                const aiResponse = data.choices ? data.choices[0].message.content : "Error connecting to AI.";
+                
+                // NEW: Both Chat Log and Editbox updated with response [cite: 431, 377]
+                addMessage('assistant', aiResponse);
+                inputBox.value = aiResponse; // Write response text in the Editbox
+                
+                contextMemory.push({ role: 'user', content: userMessage }, { role: 'assistant', content: aiResponse });
+                if (contextMemory.length > 10) contextMemory.shift();
 
-            isLoading = false;
-            sendBtn.disabled = false;
-            if (isSpeaking) speakText(aiResponse);
+                // NEW: Voice response triggered [cite: 435]
+                if (isSpeaking) speakText(aiResponse);
+
+            } catch (e) {
+                addMessage('assistant', "Check your key or connection.");
+            } finally {
+                isLoading = false;
+                sendBtn.disabled = false;
+            }
         }
 
         function addMessage(role, content) {
@@ -230,10 +230,14 @@
             if (!window.speechSynthesis) return;
             window.speechSynthesis.cancel();
             const utterance = new SpeechSynthesisUtterance(text);
+            
+            // Optional: clear editbox when speech finishes
+            utterance.onend = () => { if(inputBox.value === text) inputBox.value = ''; };
+            
             window.speechSynthesis.speak(utterance);
         }
 
-        // Event Listeners [cite: 312]
+        // Event Listeners
         toggleBtn.addEventListener('click', toggleChat);
         micBtn.addEventListener('click', toggleRecording);
         speakerBtn.addEventListener('click', toggleSpeaker);
